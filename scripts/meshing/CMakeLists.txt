@@ -11,7 +11,7 @@ if(ENABLE_OPENMP)
 endif()
 
 if(ENABLE_CUDA)
-   list(APPEND MESHING_DEPENDS cuda)
+   list(APPEND MESHING_DEPENDS cuda CUDA::cublas CUDA::cusparse)
 endif()
 
 if(ENABLE_HIP)

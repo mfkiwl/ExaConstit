@@ -35,8 +35,14 @@ set(EXACONSTIT_SOURCES
     system_driver.cpp
     option_parser.cpp
     ./umat_tests/userumat.cxx
-    ./umat_tests/umat.f
     )
+
+if (ENABLE_FORTRAN)
+    list(APPEND EXACONSTIT_SOURCES ./umat_tests/umat.f)
+else()
+    list(APPEND EXACONSTIT_SOURCES ./umat_tests/umat.cxx)
+endif()
+ 
 
 #------------------------------------------------------------------------------
 # Dependencies

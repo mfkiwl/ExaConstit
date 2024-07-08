@@ -10,7 +10,7 @@ use std::cmp::Ordering;
 use std::convert::TryFrom;
 
 #[cfg(not(feature = "polars"))]
-fn read_data(f: &str) -> Result<reader::ReaderResults<i32>, Error> {
+fn read_data(f: &str) -> Result<Box<dyn reader::ReaderResults<i32>>, Error> {
     let params = reader::ReaderParams {
         comments: Some(b'%'),
         delimiter: reader::Delimiter::Any(b','),
@@ -18,23 +18,17 @@ fn read_data(f: &str) -> Result<reader::ReaderResults<i32>, Error> {
         skip_footer: None,
         usecols: None,
         max_rows: None,
+        row_format: false,
+        ..Default::default()
     };
 
     reader::load_txt_i32(f, &params)
 }
 
 #[cfg(feature = "polars")]
-fn read_data(f: &str) -> Result<reader::ReaderResults<i32>, Error> {
-    let params = reader::ReaderParams {
-        comments: Some(b'%'),
-        delimiter: reader::Delimiter::Any(b','),
-        skip_header: Some(2),
-        skip_footer: None,
-        usecols: None,
-        max_rows: None,
-    };
-
-    reader::load_txt_i32(f, &params);
+fn read_data(f: &str) -> PolarsResult<DataFrame> {
+    CsvReader::from_path(f)?.has_header(false).with_skip_rows(2)
+               .with_delimiter(b'%').with_comment_char(Some(b',')).finish()
 }
 
 fn sort_data(chunk_size: usize, data: &mut [i32]) {
@@ -124,13 +118,10 @@ pub fn voxel_coarsen(file: &str, coarsen_size: usize) -> Result<((usize, usize, 
     let read_results = read_data(file)?;
 
     // Find the box size of things
-    let cols = vec![0, 1, 2, 3];
-    let col_results = read_results.get_cols(cols);
-
     let box_size = {
-        let x = &col_results[0];
-        let y = &col_results[1];
-        let z = &col_results[2];
+        let x = read_results.get_inner_lanes(0);
+        let y = read_results.get_inner_lanes(1);
+        let z = read_results.get_inner_lanes(2);
         let mut min = (0, 0, 0);
         let mut max = (0, 0, 0);
         min.0 = *x.iter().min().unwrap();
@@ -157,9 +148,10 @@ pub fn voxel_coarsen(file: &str, coarsen_size: usize) -> Result<((usize, usize, 
         ));
     }
 
-    let mut data = col_results[3].clone();
+    let mut data = read_results.get_col(3);
+    let col_result = read_results.get_inner_lanes(3);
+    rearrange_data(col_result, &box_size, coarsen_size, &mut data);
 
-    rearrange_data(&col_results[3], &box_size, coarsen_size, &mut data);
     sort_data(coarsen_size, &mut data);
 
     let block_size = coarsen_size.pow(3);

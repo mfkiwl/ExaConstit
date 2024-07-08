@@ -50,7 +50,6 @@ int main(int argc, char *argv[])
    lenx = leny = lenz = 1.0;
    int order;
 
-   Mesh *mesh = nullptr;
    OptionsParser args(argc, argv);
    // All the arguments to automatically generate a mesh
    args.AddOption(&auto_mesh, "-auto_mesh", "--automatic-mesh-generator" ,
@@ -93,30 +92,30 @@ int main(int argc, char *argv[])
 
       Vector g_map;
 
-      *mesh = mfem::Mesh::MakeCartesian3D(nx, ny, nz, Element::HEXAHEDRON, lenx, leny, lenz, false);
+      auto mesh = mfem::Mesh::MakeCartesian3D(nx, ny, nz, Element::HEXAHEDRON, lenx, leny, lenz, false);
 
       ifstream igmap(grain_file);
       if (!igmap) {
          cerr << "\nCannot open grain map file: " << grain_file << '\n' << endl;
       }
 
-      int gmapSize = mesh->GetNE();
+      int gmapSize = mesh.GetNE();
       g_map.Load(igmap, gmapSize);
       igmap.close();
 
       // reset boundary conditions from
-      setBdrConditions(mesh);
+      setBdrConditions(&mesh);
 
       // set grain ids as element attributes on the mesh
       // The offset of where the grain index is located is
       // location - 1.
-      setElementGrainIDs(mesh, g_map, 1, 0);
+      setElementGrainIDs(&mesh, g_map, 1, 0);
 
-      mesh->SetCurvature(order);
+      mesh.SetCurvature(order);
 
       ofstream omesh(output_file);
       omesh.precision(14);
-      mesh->Print(omesh);
+      mesh.Print(omesh);
 
    }
 
@@ -126,25 +125,23 @@ int main(int argc, char *argv[])
          cerr << "\nCan not open mesh file: " << vtk_file << endl;
          return 2;
       }
-      mesh = new Mesh(imesh, 1, 1, true);
+      auto mesh = Mesh(imesh, 1, 1, true);
       imesh.close();
       
-      const FiniteElementSpace *nodal_fes = mesh->GetNodalFESpace();
+      const FiniteElementSpace *nodal_fes = mesh.GetNodalFESpace();
 
       if (nodal_fes != NULL) {
          if(order > nodal_fes->GetOrder(0)) {
             printf("Increasing order of the FE Space to %d\n", order);
-            mesh->SetCurvature(order);
+            mesh.SetCurvature(order);
          }
       }
 
-      vtkFixBdrElements(mesh);
+      vtkFixBdrElements(&mesh);
       ofstream omesh(output_file);
       omesh.precision(14);
-      mesh->Print(omesh);
+      mesh.Print(omesh);
    }
-
-   delete mesh;
 
    return 0;
 
