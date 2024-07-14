@@ -214,14 +214,14 @@ NonlinearMechOperator::NonlinearMechOperator(ParFiniteElementSpace &fes,
       diag.SetSize(fe_space.GetTrueVSize(), Device::GetMemoryType());
       diag.UseDevice(true);
       diag = 1.0;
-      prec_oper = new MechOperatorJacobiSmoother(diag, Hform->GetEssentialTrueDofs());
+      prec_oper = new MechOperatorJacobiSmoother(diag, this->GetEssentialTrueDofs());
    }
    else if (assembly == Assembly::EA) {
       Hform->SetAssemblyLevel(mfem::AssemblyLevel::ELEMENT, ElementDofOrdering::NATIVE);
       diag.SetSize(fe_space.GetTrueVSize(), Device::GetMemoryType());
       diag.UseDevice(true);
       diag = 1.0;
-      prec_oper = new MechOperatorJacobiSmoother(diag, Hform->GetEssentialTrueDofs());
+      prec_oper = new MechOperatorJacobiSmoother(diag, this->GetEssentialTrueDofs());
    }
 
    // So, we're going to originally support non tensor-product type elements originally.
