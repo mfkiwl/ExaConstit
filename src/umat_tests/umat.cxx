@@ -11,7 +11,7 @@
 
 #ifdef WIN32
 #define UMAT_API __declspec(dllexport)
-#elif defined(__clang__)
+#elif defined(__clang__)  || defined(__INTEL_LLVM_COMPILER)
 #define UMAT_API extern "C"
 #define UMAT umat
 #else

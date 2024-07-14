@@ -16,6 +16,9 @@
 extern "C" {
 #ifdef WIN32
 #define UMAT_API __declspec(dllexport)
+#elif defined(__clang__) || defined(__INTEL_LLVM_COMPILER)
+#define UMAT_API
+#define UMAT_FUNC umat
 #else
 #define UMAT_API
 #define UMAT_FUNC umat_ 
@@ -35,7 +38,7 @@ extern "C" {
 
    // The C entry point function for my umat
    UMAT_API void
-   umat(real8 *stress, real8 *statev, real8 *ddsdde,
+   umat_call(real8 *stress, real8 *statev, real8 *ddsdde,
         real8 *sse, real8 *spd, real8 *scd, real8 *rpl,
         real8 *ddsdt, real8 *drplde, real8 *drpldt,
         real8 *stran, real8 *dstran, real8 *time,

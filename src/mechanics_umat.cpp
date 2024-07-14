@@ -532,7 +532,7 @@ void AbaqusUmatModel::ModelSetup(const int nqpts, const int nelems, const int sp
 
 
          // call c++ wrapper of umat routine
-         umat(&stress[0], &statev[0], &ddsdde[0], &sse, &spd, &scd, &rpl,
+         umat_call(&stress[0], &statev[0], &ddsdde[0], &sse, &spd, &scd, &rpl,
               ddsdt, drplde, &drpldt, &stran[0], &dstran[0], time,
               &deltaTime, &tempk, &dtemp, &predef, &dpred, &cmname,
               &ndi, &nshr, &ntens, &nstatv, &props[0], &nprops, &coords[0],
