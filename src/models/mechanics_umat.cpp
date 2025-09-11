@@ -18,13 +18,15 @@
 // data through SimulationState when needed.
 AbaqusUmatModel::AbaqusUmatModel(const int region, int nStateVars,
                                  std::shared_ptr<SimulationState>  sim_state,
-                                 const std::string& umat_library_path,
-                                 const DynamicUmatLoader::LoadStrategy& load_strategy) :
+                                 const std::filesystem::path& umat_library_path,
+                                 const DynamicUmatLoader::LoadStrategy& load_strategy,
+                                 const std::string umat_function_name) :
                                  ExaModel(region, nStateVars, sim_state),
                                  umat_library_path_(umat_library_path),
                                  umat_function_(nullptr),
                                  load_strategy_(load_strategy),
-                                 use_dynamic_loading_(!umat_library_path.empty())
+                                 use_dynamic_loading_(!umat_library_path.empty()),
+                                 umat_function_name_(umat_function_name)
 {
    // Initialize working space QuadratureFunctions
    init_loc_sf_grads(m_sim_state->GetMeshParFiniteElementSpace());
@@ -33,7 +35,14 @@ AbaqusUmatModel::AbaqusUmatModel(const int region, int nStateVars,
    // If using dynamic loading with PERSISTENT strategy, load immediately
    if (use_dynamic_loading_ && load_strategy_ == DynamicUmatLoader::LoadStrategy::PERSISTENT) {
       if (!LoadUmatLibrary()) {
-         throw std::runtime_error("Failed to load UMAT library: " + umat_library_path_);
+         throw std::runtime_error("Failed to load UMAT library: " + umat_library_path_.string());
+      }
+   } else {
+      // Use the built-in UMAT resolver
+      umat_function_ = exaconstit::UmatResolver::GetUmat();
+      if (!umat_function_) {
+         std::string error = exaconstit::UmatResolver::GetLastError();
+         throw std::runtime_error("No built-in UMAT available: " + error);
       }
    }
 }
@@ -357,7 +366,7 @@ void AbaqusUmatModel::ModelSetup(const int nqpts, const int nelems, const int sp
     // Load UMAT library if using on-demand loading
    if (use_dynamic_loading_ && load_strategy_ == DynamicUmatLoader::LoadStrategy::LOAD_ON_SETUP) {
       if (!LoadUmatLibrary()) {
-         throw std::runtime_error("Failed to load UMAT library during ModelSetup: " + umat_library_path_);
+         throw std::runtime_error("Failed to load UMAT library during ModelSetup: " + umat_library_path_.string());
       }
    }
 
@@ -401,6 +410,7 @@ void AbaqusUmatModel::ModelSetup(const int nqpts, const int nelems, const int sp
    int nstatv = numStateVars;
 
    double pnewdt = 10.0; // revisit this
+   // if get sub-1 value for auto throw exception to try again for auto dt
    mfem::Vector props(nprops); // populate from the mat props vector wrapped by matProps on the base class
    mfem::Vector statev(nstatv); // populate from the state variables associated with this element/ip
 
@@ -413,11 +423,12 @@ void AbaqusUmatModel::ModelSetup(const int nqpts, const int nelems, const int sp
    double sse = 0.0; // specific elastic strain energy, mainly for output
    double spd = 0.0; // specific plastic dissipation, mainly for output
    double scd = 0.0; // specific creep dissipation, mainly for output
-   double cmname = 0.0; // user defined UMAT name
+   std::string cmname = ""; // user defined UMAT name
    double celent = 0.0; // set element length
 
    // integration point coordinates
    // a material model shouldn't need this ever
+   // not actually integration points but provide physical coords at integration points
    double coords[3] = { 0, 0, 0 };
 
    // set the time step
@@ -606,7 +617,7 @@ void AbaqusUmatModel::ModelSetup(const int nqpts, const int nelems, const int sp
          // call c++ wrapper of umat routine
          CallUmat(&stress[0], statev.HostReadWrite(), &ddsdde[0], &sse, &spd, &scd, &rpl,
                   ddsdt, drplde, &drpldt, &stran[0], &dstran[0], time,
-                  &deltaTime, &tempk, &dtemp, &predef, &dpred, &cmname,
+                  &deltaTime, &tempk, &dtemp, &predef, &dpred, const_cast<char*>(cmname.c_str()),
                   &ndi, &nshr, &ntens, &nstatv, props.HostReadWrite(), &nprops, &coords[0],
                   drot, &pnewdt, &celent, &dfgrd0[0], &dfgrd1[0], &noel, &npt,
                   &layer, &kspt, &kstep, &kinc);
@@ -669,7 +680,7 @@ void AbaqusUmatModel::ModelSetup(const int nqpts, const int nelems, const int sp
    }
 }
 
-bool AbaqusUmatModel::SetUmatLibrary(const std::string& library_path, 
+bool AbaqusUmatModel::SetUmatLibrary(const std::filesystem::path& library_path, 
                                      DynamicUmatLoader::LoadStrategy strategy) {
    // Unload current library if loaded
    if (use_dynamic_loading_) {
@@ -691,11 +702,11 @@ bool AbaqusUmatModel::SetUmatLibrary(const std::string& library_path,
 
 bool AbaqusUmatModel::ReloadUmatLibrary() {
    if (!use_dynamic_loading_) {
-      return false;
+      return true;
    }
    
    // Force unload and reload
-   DynamicUmatLoader::UnloadUmat(umat_library_path_);
+   DynamicUmatLoader::UnloadUmat(umat_library_path_.string());
    umat_function_ = nullptr;
    
    return LoadUmatLibrary();
@@ -706,9 +717,10 @@ bool AbaqusUmatModel::LoadUmatLibrary() {
       return true; // Already loaded or not using dynamic loading
    }
    
-   umat_function_ = DynamicUmatLoader::LoadUmat(umat_library_path_, load_strategy_);
+   umat_function_ = DynamicUmatLoader::LoadUmat(umat_library_path_.string(), load_strategy_, umat_function_name_);
+
    if (!umat_function_) {
-      std::cerr << "Failed to load UMAT library: " << umat_library_path_ << std::endl;
+      MFEM_ABORT_0("Failed to load UMAT library:" + umat_library_path_.string());
       return false;
    }
 
@@ -717,7 +729,7 @@ bool AbaqusUmatModel::LoadUmatLibrary() {
 
 void AbaqusUmatModel::UnloadUmatLibrary() {
    if (use_dynamic_loading_ && !umat_library_path_.empty()) {
-      DynamicUmatLoader::UnloadUmat(umat_library_path_);
+      DynamicUmatLoader::UnloadUmat(umat_library_path_.string());
       umat_function_ = nullptr;
    }
 }
@@ -727,30 +739,21 @@ void AbaqusUmatModel::CallUmat(double *stress, double *statev, double *ddsdde,
                                double *ddsdt, double *drplde, double *drpldt,
                                double *stran, double *dstran, double *time,
                                double *deltaTime, double *tempk, double *dtemp, double *predef,
-                               double *dpred, double *cmname, int *ndi, int *nshr, int *ntens,
+                               double *dpred, char *cmname, int *ndi, int *nshr, int *ntens,
                                int *nstatv, double *props, int *nprops, double *coords,
                                double *drot, double *pnewdt, double *celent,
                                double *dfgrd0, double *dfgrd1, int *noel, int *npt,
                                int *layer, int *kspt, int *kstep, int *kinc) {
 
-   if (use_dynamic_loading_) {
-      // Use dynamically loaded function
-      if (!umat_function_) {
-            throw std::runtime_error("UMAT function not loaded for library: " + umat_library_path_);
-      }
-      umat_function_(stress, statev, ddsdde, sse, spd, scd, rpl,
-                     ddsdt, drplde, drpldt, stran, dstran, time, deltaTime,
-                     tempk, dtemp, predef, dpred, cmname, ndi, nshr, ntens,
-                     nstatv, props, nprops, coords, drot, pnewdt, celent,
-                     dfgrd0, dfgrd1, noel, npt, layer, kspt, kstep, kinc);
-   } else {
-      // Use statically linked function (from userumat.h)
-      umat_call(stress, statev, ddsdde, sse, spd, scd, rpl,
-               ddsdt, drplde, drpldt, stran, dstran, time, deltaTime,
-               tempk, dtemp, predef, dpred, cmname, ndi, nshr, ntens,
-               nstatv, props, nprops, coords, drot, pnewdt, celent,
-               dfgrd0, dfgrd1, noel, npt, layer, kspt, kstep, kinc);
+   if (!umat_function_) {
+      MFEM_ABORT_0("UMAT function not available");
    }
+
+   umat_function_(stress, statev, ddsdde, sse, spd, scd, rpl,
+                  ddsdt, drplde, drpldt, stran, dstran, time, deltaTime,
+                  tempk, dtemp, predef, dpred, cmname, ndi, nshr, ntens,
+                  nstatv, props, nprops, coords, drot, pnewdt, celent,
+                  dfgrd0, dfgrd1, noel, npt, layer, kspt, kstep, kinc);
 }
 
 // UNCHANGED: This method doesn't access QuadratureFunctions
